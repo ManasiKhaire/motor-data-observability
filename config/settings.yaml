@@ -13,6 +13,19 @@ reference:
   device_share: 0.7     # share of vehicles with a telematics device
   expired_share: 0.1    # share of policies that have already expired
 
+pipeline:
+  interval_seconds: 5            # how often the pipeline looks for new files
+  freshness_factor: 4            # alert if a source is silent for 4x its normal interval
+  resolve_after_clean_batches: 2 # an alert closes itself after this many clean batches
+
+llm:
+  model: gemini-3.1-flash-lite   # override with GEMINI_MODEL in .env
+  fallback_models:               # tried in order if Google says a model no longer exists
+    - gemini-3-flash-preview
+    - gemini-2.5-flash
+  timeout_seconds: 30
+  min_seconds_between_calls: 4   # keeps you inside free-tier rate limits
+
 sources:
   telematics:
     interval_seconds: 5

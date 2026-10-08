@@ -1,146 +1,115 @@
 # Motor Data Observability
 
-Simulated live data for our agentic data observability project, set in **motor insurance**.
-Five Python generators write new files every few seconds, exactly like real source systems
-would, and each one can **inject its typical failure on demand** so the checks and AI agents
-have something real to catch during the demo.
-
-**Each person writes one generator.** The shared parts (master data, file writing, the run
-loop, the live problem switch, tests) are already done. Your file in `generators/` is a
-template with the fields, rules and problems listed and `TODO`s to fill in.
-
-## Your task
-
-1. Open your file in `generators/` and read its docstring.
-2. Fill in `make_batch(self, n, problem)`: return a list of `n` dicts (one per record),
-   using IDs from `self.ref` and randomness from `self.rng`.
-3. Handle each problem in your `problems` list, and `self.log("ERROR", "...")` a realistic
-   cause, so the root cause agent has evidence to find.
-4. Run `python -m pytest -q`: your source's tests switch from *skipped* to *passed* when your
-   columns match `schemas/source_contracts.json` and your IDs match the shared master data.
-5. Run it: `python run_generator.py --source <yours> --batches 3 --interval 1`.
-
-What you can use inside `make_batch`:
-
-| Name | What it gives you |
-|---|---|
-| `self.ref.customers` / `vehicles` / `policies` / `devices` / `garages` | Shared master data (lists of dicts) |
-| `self.ref.active_policies` / `expired_policies` | Policies split by end date |
-| `self.rng` | Random number generator (`self.rng.choice`, `.sample`, `.uniform` ...) |
-| `self.log(level, message, **extra)` | Writes a line to `output/logs/<source>.log` |
-| `self.out_dir` | Output folder (garage bills reads claims files from here) |
-| `common.io.utc_now()` | Current time (UTC) |
-| `common.io.set_vault_token(out_dir, status)` | KYC only: `"valid"` or `"expired"` |
-
-## The five sources
-
-| # | Source | Owner | Format | Every | Problems you can inject |
-|---|---|---|---|---|---|
-| 1 | `telematics` | Person 1 | JSON | 5 s | `feed_stop`, `duplicates`, `impossible_values` |
-| 2 | `policy` | Person 2 | CSV | 60 s | `schema_drift`, `bad_dates`, `missing_vehicle_id` |
-| 3 | `customer_kyc` | Person 3 | JSON | 30 s | `expired_token`, `duplicate_customer`, `invalid_pan` |
-| 4 | `claims` | Person 4 | JSON | 10 s | `null_amount`, `negative_amount`, `duplicate_claim`, `expired_policy` |
-| 5 | `garage_bills` | Person 5 | CSV | 30 s | `total_mismatch`, `orphan_claim`, `late` |
-
-All sources share the same customer, policy and vehicle IDs (same seed), so joins work:
+An AI-powered observability platform for a **motor insurance data platform**, running entirely
+on a laptop. Five live data feeds flow through a Bronze → Silver → Gold pipeline. Checks run on
+every batch, AI agents work out *why* something broke and *what it affects*, and a person
+approves the fix before it touches real data.
 
 ```
-customer_kyc (customer_id) -> policy (policy_id, vehicle_id) -> claims (claim_id) -> garage_bills (bill_id)
-                                          ^
-                              telematics (vehicle_id, policy_id)
+5 live sources ──> Bronze ──> checks ──> Silver ──> Gold data products
+ (generators)       (raw)        │        (clean,      (risk score, claims,
+                                 │         masked)      fraud, customer 360,
+                                 ▼                      compliance)
+                          alerts table
+                                 │
+                 orchestrator ─> root cause (Gemini) ─> impact ─> fix proposal
+                                                                      │
+                                       person approves in dashboard ◄─┘
+                                                │
+                                test on sample ─> apply ─> verify ─> report
 ```
 
-## Quick start (laptop)
+## Run it
+
+Needs Python 3.10 or newer.
 
 ```bash
 git clone https://github.com/ManasiKhaire/motor-data-observability.git
 cd motor-data-observability
-python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-python run_generator.py --list                          # every source and its problems
-python run_generator.py --source claims                 # run your own source (Ctrl+C to stop)
+cp .env.example .env                 # Windows: copy .env.example .env, then add your Gemini key
+python check_gemini.py               # optional: tests the key, proxy and certificates
 ```
 
-Run everything at once (for demos):
+Open **three terminals** in the project folder (activate the venv in each):
 
-```bash
-python run_all.py
-python run_all.py --batches 5 --interval 1              # quick 5-second test
-```
+| Terminal | Command | What it does |
+|---|---|---|
+| 1 | `python run_all.py` | Five sources write new files every few seconds |
+| 2 | `python run_pipeline.py --reset` | Loads, checks, transforms and runs the agents every 5 s |
+| 3 | `streamlit run app/dashboard.py` | Dashboard at http://localhost:8501 |
 
-## Injecting problems
+## Demo in five minutes
 
-From the start:
+1. Open the dashboard. Everything is green, and rows are counting up.
+2. In the sidebar, choose **customer_kyc → expired_token** and click **Apply**.
+3. Within about 10 seconds:
+   - the **Pipeline map** turns `mask pii` red and the two customer Gold tables red (publishing halted)
+   - **Compliance** shows AT RISK and unmasked rows in Silver
+   - **Incidents** shows a new incident: root cause *Vault token expired*, impact, proposed fix
+4. Click **Approve fix**. On the next cycle the agents test the fix on a sample, apply it,
+   re-mask the leaked rows, release Gold and write the final report.
+5. Try more: `policy → schema_drift` (fixed with a column mapping), `telematics → feed_stop`,
+   `claims → negative_amount`, `garage_bills → late`.
 
-```bash
-python run_generator.py --source claims --inject negative_amount
-```
+You can also approve from the terminal: `python approve.py` lists waiting fixes,
+`python approve.py INC-0001` approves one, `--reject` hands it to the owner.
 
-Or **live, while generators are running**, from a second terminal (best for the demo):
+## Does Gemini cope with live, changing data?
 
-```bash
-python inject.py claims negative_amount      # switch on
-python inject.py claims off                  # switch off
-python inject.py status                      # what is on right now
-```
+Yes, because Gemini never reads the stream. Python handles every batch (checks, counts,
+freshness). Gemini is called only when an incident opens, with a small summary of alerts,
+a few log lines and the lineage, and once more for the final report: about **two calls per
+incident**. How fast the data changes does not matter, and you stay inside free-tier limits.
 
-## What gets written
+The LLM also never decides *what code runs*. It explains the cause; the fix is always one
+action from a fixed playbook, and only after a person approves.
 
-```
-output/
-  landing/<source>/   data files, one per batch   <- Auto Loader reads these
-  logs/<source>.log   one JSON line per event     <- the root cause agent reads these
-  control/inject.json      live problem switch
-  control/vault_token.json valid | expired        <- the PII masking step reads this
-```
+## Gemini behind Zscaler
 
-Files are written to a temp name starting with `_` and then renamed, so Spark never reads half a file.
+| Symptom (`python check_gemini.py`) | Fix |
+|---|---|
+| `no GEMINI_API_KEY set` | Add `GEMINI_API_KEY=...` to `.env` (get one at aistudio.google.com/apikey) |
+| `SSL certificate problem` | Zscaler inspects HTTPS. Get the Zscaler root certificate (from IT, or export "Zscaler Root CA" from your browser as .pem/.cer) and set `GEMINI_CA_BUNDLE=path\to\zscaler.pem` in `.env` |
+| `network: ...` or `HTTP 403` | The API is blocked by policy. Ask IT to allow `generativelanguage.googleapis.com`, or run with `LLM_MODE=offline` |
+| `HTTP 429` | Free-tier rate limit; wait a minute. Raise `min_seconds_between_calls` in `config/settings.yaml` |
+| `HTTP 404` | The model was retired. The client tries the `fallback_models` in `config/settings.yaml` automatically; you can also set `GEMINI_MODEL` in `.env` |
 
-### The expired-token story (main demo)
+With no key or no network, everything still works: the agents use their built-in rules,
+and the dashboard says "analysed by rules".
 
-`customer_kyc` sends **raw** personal data, as real source systems do. Masking happens in the
-pipeline (Bronze to Silver) and needs a valid Vault token. `expired_token` sets
-`control/vault_token.json` to `expired` and logs `Vault returned 403 on token refresh`.
-The masking step should read that file: if the token is expired, masking fails, raw PII
-reaches Silver, the PII scan raises an alert, and the agents trace it back to the token.
+## Problems you can inject
 
-## On Databricks
+| Source | Problems | Caught by | Fix the agents propose |
+|---|---|---|---|
+| telematics | `feed_stop`, `duplicates`, `impossible_values` | freshness, duplicates, range | restart connector / quarantine and notify |
+| policy | `schema_drift`, `bad_dates`, `missing_vehicle_id` | schema, rule, nulls | column mapping and reload / quarantine |
+| claims | `null_amount`, `negative_amount`, `duplicate_claim`, `expired_policy` | nulls, range, duplicates, referential | quarantine and notify |
+| garage_bills | `total_mismatch`, `orphan_claim`, `late` | reconciliation, referential, freshness | quarantine / restart connector |
+| customer_kyc | `expired_token`, `duplicate_customer`, `invalid_pan` | PII scan, duplicates, format | renew Vault token and re-mask / quarantine |
 
-1. Workspace > Create > **Git folder**, paste this repo URL.
-2. Run once in SQL: `CREATE SCHEMA IF NOT EXISTS main.motor_obs; CREATE VOLUME IF NOT EXISTS main.motor_obs.landing;`
-   then the statements in `sql/alerts_table.sql`.
-3. `databricks/00_run_generator.py`: pick your source, run all. Files go to `/Volumes/main/motor_obs/landing`.
-4. `databricks/01_bronze_autoloader.py`: pick the same source, run all. New files stream into `main.motor_obs.bronze_<source>`.
-
-Change `main.motor_obs` if your workspace uses another catalog or schema.
-
-## Repository map
+## Project map
 
 | Path | What it is |
 |---|---|
-| `config/settings.yaml` | Seed, output folder, rows per batch and interval for each source |
-| `common/reference.py` | Shared master data (customers, vehicles, policies, devices, garages) built from the seed |
-| `common/io.py` | Writes batch files and log lines, reads and sets the live problem switch |
-| `generators/base.py` | The loop every generator shares |
-| `generators/<source>.py` | One file per source, **written by its owner** (template with TODOs) |
-| `run_generator.py` | Run one source |
-| `run_all.py` | Run all five together |
-| `inject.py` | Switch problems on and off live |
-| `schemas/source_contracts.json` | Expected columns, types and rules per source, for the checks |
-| `lineage/lineage.json` | What feeds what, owners and SLAs, for the Impact agent |
-| `sql/alerts_table.sql` | Shared `alerts` and `incidents` Delta tables |
-| `databricks/` | Notebooks to run a generator and stream it into Bronze with Auto Loader |
-| `tests/` | `python -m pytest -q` checks each written source against its contract; unwritten ones are skipped |
+| `generators/` | The five sources, each with its problems |
+| `pipeline/runner.py` | One cycle: ingest → checks → Silver → PII scan → Gold → map colours |
+| `pipeline/checks.py` | Schema, nulls, ranges, formats, duplicates, references, reconciliation, PII |
+| `pipeline/transform.py` | Column mappings, PII masking (needs the Vault token), Silver writes |
+| `pipeline/gold.py` | The five Gold data products, and blocking/unblocking them |
+| `agents/orchestrator.py` | Moves each incident through its life, one step per cycle |
+| `agents/root_cause.py` | Gathers evidence, asks Gemini (or rules) for the cause |
+| `agents/impact.py` | Walks lineage downstream; SLA countdown per Gold table |
+| `agents/fixer.py` + `actions.py` | The fix playbook; test on sample, apply, verify |
+| `agents/reporter.py` | Final incident report (also saved to `output/reports/`) |
+| `agents/llm.py` | Gemini client (standard library only; proxy and certificate aware) |
+| `app/dashboard.py` | Streamlit dashboard |
+| `schemas/source_contracts.json` | Expected columns and rules per source |
+| `lineage/lineage.json` | What feeds what, owners, SLAs |
+| `output/` | Generated files, logs, `observability.db`, reports (not committed) |
+| `databricks/`, `sql/` | Notebooks and table DDL for running the same idea on Databricks |
+| `docs/HOW_IT_WORKS.md` | The design explained step by step |
 
-## Adding a new problem to your source
-
-1. Add it to `problems` at the top of your generator with a one-line description.
-2. Handle it in `make_batch`, and log a realistic cause with `self.log("ERROR", "...")` so the root cause agent has evidence.
-3. Run `python -m pytest -q`.
-
-## Working together
-
-- Work on a branch named after your source (`git checkout -b claims`) and open a pull request.
-- Change only your own generator file. Ask before changing `common/`, `config/` or `schemas/`, because everyone depends on them.
-- Garage bills reads claim files, so Person 4 (claims) should push a working version early.
+Run the tests with `python -m pytest -q` (Gemini is switched off in tests).
