@@ -1,0 +1,36 @@
+# Shared settings for all five generators.
+# Everyone uses the same seed so customer, policy and vehicle IDs match across sources.
+
+seed: 42
+
+# Where files are written. Override with --out, e.g. a Databricks Volume:
+#   /Volumes/<catalog>/<schema>/landing
+output_dir: output
+
+reference:
+  customers: 300        # one vehicle and one policy per customer
+  garages: 25
+  device_share: 0.7     # share of vehicles with a telematics device
+  expired_share: 0.1    # share of policies that have already expired
+
+sources:
+  telematics:
+    interval_seconds: 5
+    records_per_batch: 50
+    format: json
+  policy:
+    interval_seconds: 60
+    records_per_batch: 15
+    format: csv
+  claims:
+    interval_seconds: 10
+    records_per_batch: 20
+    format: json
+  garage_bills:
+    interval_seconds: 30
+    records_per_batch: 10
+    format: csv
+  customer_kyc:
+    interval_seconds: 30
+    records_per_batch: 10
+    format: json

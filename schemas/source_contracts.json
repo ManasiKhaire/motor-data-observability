@@ -1,0 +1,65 @@
+{
+  "_about": "Expected columns per source. The schema check compares each new batch against this; any added, missing or renamed column is schema drift.",
+  "telematics": {
+    "device_id": {"type": "string", "nullable": false},
+    "vehicle_id": {"type": "string", "nullable": false},
+    "policy_id": {"type": "string", "nullable": false},
+    "timestamp": {"type": "timestamp", "nullable": false},
+    "speed_kmph": {"type": "double", "nullable": false, "min": 0, "max": 220},
+    "harsh_brake": {"type": "boolean", "nullable": false},
+    "harsh_accel": {"type": "boolean", "nullable": false},
+    "lat": {"type": "double", "nullable": false, "min": 6, "max": 37},
+    "lon": {"type": "double", "nullable": false, "min": 68, "max": 98},
+    "odometer_km": {"type": "double", "nullable": false, "min": 0}
+  },
+  "policy": {
+    "policy_id": {"type": "string", "nullable": false},
+    "customer_id": {"type": "string", "nullable": false},
+    "vehicle_id": {"type": "string", "nullable": false},
+    "reg_no": {"type": "string", "nullable": false},
+    "make": {"type": "string", "nullable": false},
+    "model": {"type": "string", "nullable": false},
+    "year": {"type": "int", "nullable": false, "min": 1990, "max": 2027},
+    "cover_type": {"type": "string", "nullable": false, "allowed": ["Comprehensive", "Third Party", "Own Damage"]},
+    "sum_insured": {"type": "double", "nullable": false, "min": 1},
+    "premium": {"type": "double", "nullable": false, "min": 1},
+    "start_date": {"type": "date", "nullable": false},
+    "end_date": {"type": "date", "nullable": false, "rule": "end_date > start_date"},
+    "change_type": {"type": "string", "nullable": false, "allowed": ["NEW", "RENEWAL", "ENDORSEMENT"]}
+  },
+  "claims": {
+    "claim_id": {"type": "string", "nullable": false, "unique": true},
+    "policy_id": {"type": "string", "nullable": false, "rule": "policy must be active on accident_date"},
+    "vehicle_id": {"type": "string", "nullable": false},
+    "accident_date": {"type": "date", "nullable": false},
+    "reported_at": {"type": "timestamp", "nullable": false},
+    "location": {"type": "string", "nullable": false},
+    "claim_type": {"type": "string", "nullable": false, "allowed": ["Collision", "Theft", "Windshield", "Flood", "Third Party"]},
+    "claim_amount": {"type": "double", "nullable": false, "min": 1},
+    "status": {"type": "string", "nullable": false},
+    "garage_id": {"type": "string", "nullable": false},
+    "_duplicate_rule": "one claim per vehicle_id per accident_date"
+  },
+  "garage_bills": {
+    "bill_id": {"type": "string", "nullable": false, "unique": true},
+    "claim_id": {"type": "string", "nullable": false, "rule": "must exist in claims"},
+    "garage_id": {"type": "string", "nullable": false},
+    "parts_cost": {"type": "double", "nullable": false, "min": 0},
+    "labour_cost": {"type": "double", "nullable": false, "min": 0},
+    "total": {"type": "double", "nullable": false, "rule": "total == parts_cost + labour_cost"},
+    "invoice_date": {"type": "date", "nullable": false},
+    "_freshness_sla_minutes": 5
+  },
+  "customer_kyc": {
+    "customer_id": {"type": "string", "nullable": false, "unique": true},
+    "name": {"type": "string", "nullable": false, "pii": true},
+    "phone": {"type": "string", "nullable": false, "pii": true},
+    "email": {"type": "string", "nullable": false, "pii": true},
+    "licence_no": {"type": "string", "nullable": false, "pii": true},
+    "pan": {"type": "string", "nullable": false, "pii": true, "pattern": "^[A-Z]{5}[0-9]{4}[A-Z]$"},
+    "address": {"type": "string", "nullable": false, "pii": true},
+    "dob": {"type": "date", "nullable": false, "pii": true},
+    "city": {"type": "string", "nullable": false},
+    "updated_at": {"type": "timestamp", "nullable": false}
+  }
+}

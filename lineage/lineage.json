@@ -1,0 +1,56 @@
+{
+  "_about": "What feeds what. The Impact agent walks these edges downstream from a broken node to find every affected Gold table, its owner and its SLA.",
+  "nodes": [
+    {"id": "src_telematics", "layer": "source", "owner": "Person 1"},
+    {"id": "src_policy", "layer": "source", "owner": "Person 2"},
+    {"id": "src_customer_kyc", "layer": "source", "owner": "Person 3"},
+    {"id": "src_claims", "layer": "source", "owner": "Person 4"},
+    {"id": "src_garage_bills", "layer": "source", "owner": "Person 5"},
+
+    {"id": "bronze_telematics", "layer": "bronze"},
+    {"id": "bronze_policy", "layer": "bronze"},
+    {"id": "bronze_customer_kyc", "layer": "bronze"},
+    {"id": "bronze_claims", "layer": "bronze"},
+    {"id": "bronze_garage_bills", "layer": "bronze"},
+
+    {"id": "mask_pii", "layer": "step", "depends_on_secret": "vault_token"},
+
+    {"id": "silver_telematics", "layer": "silver"},
+    {"id": "silver_policy", "layer": "silver"},
+    {"id": "silver_customer", "layer": "silver"},
+    {"id": "silver_claims", "layer": "silver"},
+    {"id": "silver_garage_bills", "layer": "silver"},
+
+    {"id": "gold_driver_risk_score", "layer": "gold", "owner": "Pricing team", "sla_minutes": 60},
+    {"id": "gold_claims_summary", "layer": "gold", "owner": "Claims ops", "sla_minutes": 30},
+    {"id": "gold_fraud_watchlist", "layer": "gold", "owner": "Fraud team", "sla_minutes": 30},
+    {"id": "gold_customer_360", "layer": "gold", "owner": "CRM team", "sla_minutes": 120},
+    {"id": "gold_compliance_report", "layer": "gold", "owner": "Compliance", "sla_minutes": 240, "regulation": ["DPDP Act", "IRDAI"]}
+  ],
+  "edges": [
+    ["src_telematics", "bronze_telematics"],
+    ["src_policy", "bronze_policy"],
+    ["src_customer_kyc", "bronze_customer_kyc"],
+    ["src_claims", "bronze_claims"],
+    ["src_garage_bills", "bronze_garage_bills"],
+
+    ["bronze_telematics", "silver_telematics"],
+    ["bronze_policy", "silver_policy"],
+    ["bronze_customer_kyc", "mask_pii"],
+    ["mask_pii", "silver_customer"],
+    ["bronze_claims", "silver_claims"],
+    ["bronze_garage_bills", "silver_garage_bills"],
+
+    ["silver_telematics", "gold_driver_risk_score"],
+    ["silver_policy", "gold_driver_risk_score"],
+    ["silver_claims", "gold_claims_summary"],
+    ["silver_policy", "gold_claims_summary"],
+    ["silver_claims", "gold_fraud_watchlist"],
+    ["silver_garage_bills", "gold_fraud_watchlist"],
+    ["silver_customer", "gold_customer_360"],
+    ["silver_policy", "gold_customer_360"],
+    ["silver_claims", "gold_customer_360"],
+    ["silver_customer", "gold_compliance_report"],
+    ["gold_customer_360", "gold_compliance_report"]
+  ]
+}
