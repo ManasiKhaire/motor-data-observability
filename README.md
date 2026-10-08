@@ -19,6 +19,8 @@ approves the fix before it touches real data.
                                 test on sample ─> apply ─> verify ─> report
 ```
 
+![Overview](docs/screenshots/overview.jpg)
+
 ## Run it
 
 Needs Python 3.10 or newer.
@@ -41,12 +43,30 @@ Open **three terminals** in the project folder (activate the venv in each):
 | 2 | `python run_pipeline.py --reset` | Loads, checks, transforms and runs the agents every 5 s |
 | 3 | `streamlit run app/dashboard.py` | Dashboard at http://localhost:8501 |
 
+## The dashboard
+
+| Tab | What it shows |
+|---|---|
+| **Overview** | Platform health score, throughput, data quality %, open alerts, MTTR; throughput by source, freshness, quality trend, alerts by severity, a source × check failure heatmap, active incidents |
+| **Service map** | Live lineage graph: every step coloured by health with rows/min, failing edges highlighted |
+| **Data quality** | Rows stopped by each check, pass rate per source, full alert list |
+| **Compliance** | DPDP / IRDAI / PII policy status, unmasked rows, halted publishing, masked sample |
+| **SLA & lineage** | SLA budget per data product, blast-radius explorer |
+| **Incidents** | Incident timeline, AI root cause with confidence and evidence, impact, proposed fix with Approve / Reject, activity log, final report |
+
+The sidebar has **chaos controls** to inject or clear problems live.
+
+| Service map | Incident |
+|---|---|
+| ![Service map](docs/screenshots/service-map.jpg) | ![Incident](docs/screenshots/incidents.jpg) |
+
 ## Demo in five minutes
 
 1. Open the dashboard. Everything is green, and rows are counting up.
-2. In the sidebar, choose **customer_kyc → expired_token** and click **Apply**.
+2. In the sidebar, choose **customer_kyc → expired_token** and click **Inject**.
 3. Within about 10 seconds:
-   - the **Pipeline map** turns `mask pii` red and the two customer Gold tables red (publishing halted)
+   - the **Overview** health score drops and the failure heatmap lights up
+   - the **Service map** turns `mask pii` red and the two customer Gold tables red (publishing halted)
    - **Compliance** shows AT RISK and unmasked rows in Silver
    - **Incidents** shows a new incident: root cause *Vault token expired*, impact, proposed fix
 4. Click **Approve fix**. On the next cycle the agents test the fix on a sample, apply it,
@@ -105,7 +125,8 @@ and the dashboard says "analysed by rules".
 | `agents/fixer.py` + `actions.py` | The fix playbook; test on sample, apply, verify |
 | `agents/reporter.py` | Final incident report (also saved to `output/reports/`) |
 | `agents/llm.py` | Gemini client (standard library only; proxy and certificate aware) |
-| `app/dashboard.py` | Streamlit dashboard |
+| `app/dashboard.py` | Streamlit dashboard (layout) |
+| `app/charts.py`, `app/data.py` | Chart styles (dark theme, fixed colour per source) and the queries behind them |
 | `schemas/source_contracts.json` | Expected columns and rules per source |
 | `lineage/lineage.json` | What feeds what, owners, SLAs |
 | `output/` | Generated files, logs, `observability.db`, reports (not committed) |
